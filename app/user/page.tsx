@@ -49,7 +49,7 @@ const UserDashboard = () => {
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Update current time every second
+  /// Update current time every second
   useEffect(() => {
     const updateTime = () => {
       setLastUpdated(new Date().toLocaleTimeString());
