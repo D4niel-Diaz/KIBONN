@@ -8,10 +8,10 @@ import { BookOpenIcon, EnvelopeIcon, LockClosedIcon, UserIcon } from '@heroicons
 import Loader from '@/components/loader';
 
 interface FormData {
-  name?: string;
+  name: string;
   email: string;
   password: string;
-  password_confirmation?: string;
+  password_confirmation: string;
   role: string;
 }
 
@@ -26,6 +26,7 @@ const AuthPage = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasRedirected, setHasRedirected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { login, register, authToken, isLoading, user } = useAppContext();
 
@@ -50,6 +51,7 @@ const AuthPage = () => {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
+    setError(null);
 
     try {
       if (isLogin) {
@@ -57,22 +59,22 @@ const AuthPage = () => {
         toast.success("Logged in successfully!");
       } else {
         if (formData.password !== formData.password_confirmation) {
-          toast.error("Passwords don't match!");
-          setIsSubmitting(false);
-          return;
+          throw new Error("Passwords don't match!");
         }
         await register(
-          formData.name!,
+          formData.name,
           formData.email,
           formData.password,
-          formData.password_confirmation!
+          formData.password_confirmation
         );
         toast.success("Registered successfully! Please login.");
         setIsLogin(true);
       }
-    } catch (error: any) {
-      console.error("Authentication error:", error);
-      toast.error(error?.response?.data?.message || "Authentication failed");
+    } catch (error) {
+      const axiosError = error as Error;
+      console.error("Authentication error:", axiosError);
+      setError(axiosError.message || "Authentication failed");
+      toast.error(axiosError.message || "Authentication failed");
     } finally {
       setIsSubmitting(false);
     }

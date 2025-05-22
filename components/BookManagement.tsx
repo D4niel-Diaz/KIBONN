@@ -12,6 +12,9 @@ interface Book {
   author: string;
   description: string;
   publisher: string;
+  genre?: string;
+  total_copies?: number;
+  available_copies?: number;
 }
 
 interface BookManagementProps {
@@ -26,9 +29,13 @@ const BookManagement = ({ books, onRefresh }: BookManagementProps) => {
     title: '',
     author: '',
     description: '',
-    publisher: ''
+    publisher: '',
+    genre: '',
+    total_copies: 1,
+    available_copies: 1
   });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -38,6 +45,7 @@ const BookManagement = ({ books, onRefresh }: BookManagementProps) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
+    setError(null);
 
     try {
       if (isEditing) {
@@ -57,8 +65,11 @@ const BookManagement = ({ books, onRefresh }: BookManagementProps) => {
       }
       resetForm();
       onRefresh();
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to save book');
+    } catch (error) {
+      const axiosError = error as Error;
+      console.error('Book operation error:', axiosError);
+      setError(axiosError.message || 'Failed to save book');
+      toast.error(axiosError.message || 'Failed to save book');
     } finally {
       setIsProcessing(false);
     }
@@ -93,7 +104,10 @@ const BookManagement = ({ books, onRefresh }: BookManagementProps) => {
       title: '',
       author: '',
       description: '',
-      publisher: ''
+      publisher: '',
+      genre: '',
+      total_copies: 1,
+      available_copies: 1
     });
     setIsEditing(null);
   };

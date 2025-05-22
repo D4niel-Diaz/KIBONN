@@ -316,7 +316,6 @@ const AdminDashboard = () => {
     setLoading(prev => ({...prev, books: true}));
     setError(null);
     try {
-      console.log('Fetching books...'); // Debug log
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/books`,
         {
@@ -332,8 +331,6 @@ const AdminDashboard = () => {
         }
       );
       
-      console.log('Books response:', response.data); // Debug log
-      
       if (response.data && Array.isArray(response.data.data)) {
         setBooks(response.data.data);
         setPagination(prev => ({
@@ -346,14 +343,14 @@ const AdminDashboard = () => {
           }
         }));
       } else {
-        console.error('Invalid books data format:', response.data);
         throw new Error("Invalid response format");
       }
-    } catch (error: any) {
-      console.error('Books fetch error:', error);
-      setError(error.response?.data?.message || "Failed to load books");
+    } catch (error) {
+      const axiosError = error as Error;
+      console.error('Books fetch error:', axiosError);
+      setError(axiosError.message || "Failed to load books");
       toast.error(
-        error.response?.data?.message || 
+        axiosError.message || 
         "Failed to load books. Please try again."
       );
     } finally {

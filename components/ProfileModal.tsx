@@ -14,29 +14,21 @@ interface ProfileModalProps {
     name: string;
     email: string;
     role: string;
-  } | null;
+    profile_image?: string;
+  };
 }
 
-const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user }) => {
+const ProfileModal = ({ isOpen, onClose, user }: ProfileModalProps) => {
   const { authToken, updateUser } = useAppContext();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
+    name: user.name,
+    email: user.email,
     current_password: '',
     new_password: '',
-    new_password_confirmation: '',
+    confirm_password: ''
   });
-
-  useEffect(() => {
-    if (user) {
-      setFormData(prev => ({
-        ...prev,
-        name: user.name,
-        email: user.email
-      }));
-    }
-  }, [user]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -46,112 +38,51 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user }) =>
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
     try {
-      // Handle profile update (name, email)
-      const formDataToSend = new FormData();
-      let hasChanges = false;
-
-      if (formData.name !== user?.name) {
-        formDataToSend.append('name', formData.name);
-        hasChanges = true;
-      }
-
-      if (formData.email !== user?.email) {
-        formDataToSend.append('email', formData.email);
-        hasChanges = true;
-      }
-
-      // Update profile if there are changes
-      if (hasChanges) {
-        const profileResponse = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/profile/update`,
-          formDataToSend,
-          {
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Accept': 'application/json',
-              'Content-Type': 'multipart/form-data',
-            },
-          }
-        );
-
-        if (profileResponse.data.success) {
-          const updatedUser = {
-            ...user,
-            ...profileResponse.data.data
-          };
-          updateUser(updatedUser);
-          toast.success('Profile updated successfully');
+      if (formData.new_password) {
+        if (formData.new_password !== formData.confirm_password) {
+          throw new Error('New passwords do not match');
+        }
+        if (!formData.current_password) {
+          throw new Error('Current password is required to set a new password');
         }
       }
 
-      // Handle password update if all password fields are filled
-      const hasPasswordFields = formData.current_password.trim() && 
-                              formData.new_password.trim() && 
-                              formData.new_password_confirmation.trim();
-
-      if (hasPasswordFields) {
-        if (formData.new_password !== formData.new_password_confirmation) {
-          toast.error('New passwords do not match');
-          setLoading(false);
-          return;
-        }
-
-        if (formData.new_password.length < 8) {
-          toast.error('New password must be at least 8 characters long');
-          setLoading(false);
-          return;
-        }
-
-        const passwordData = {
+      const response = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/profile`,
+        {
+          name: formData.name,
+          email: formData.email,
           current_password: formData.current_password,
-          new_password: formData.new_password,
-          new_password_confirmation: formData.new_password_confirmation
-        };
-
-        const passwordResponse = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/profile/update-password`,
-          passwordData,
-          {
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
+          new_password: formData.new_password
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            Accept: 'application/json'
           }
-        );
-
-        if (passwordResponse.data.success) {
-          toast.success('Password updated successfully');
-          // Clear password fields
-          setFormData(prev => ({
-            ...prev,
-            current_password: '',
-            new_password: '',
-            new_password_confirmation: ''
-          }));
         }
-      }
+      );
 
-      if (!hasChanges && !hasPasswordFields) {
-        toast.error('No changes were made');
-        setLoading(false);
-        return;
-      }
-
+      updateUser(response.data.user);
+      toast.success('Profile updated successfully');
       onClose();
-      window.location.reload();
-    } catch (error: any) {
-      console.error('Profile update error:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to update profile';
-      toast.error(errorMessage);
+    } catch (error) {
+      const axiosError = error as Error;
+      console.error('Profile update error:', axiosError);
+      setError(axiosError.message || 'Failed to update profile');
+      toast.error(axiosError.message || 'Failed to update profile');
       
-      if (error.response?.status === 422) {
-        const validationErrors = error.response.data.errors;
-        if (validationErrors) {
+      if (axiosError instanceof Error && 'response' in axiosError) {
+        const response = (axiosError as any).response;
+        if (response?.status === 422 && response?.data?.errors) {
+          const validationErrors = response.data.errors;
           Object.values(validationErrors).forEach((messages: any) => {
-            messages.forEach((message: string) => toast.error(message));
+            if (Array.isArray(messages)) {
+              messages.forEach((message: string) => toast.error(message));
+            }
           });
         }
       }
@@ -245,14 +176,14 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user }) =>
 
             {/* Confirm New Password */}
             <div>
-              <label htmlFor="new_password_confirmation" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="confirm_password" className="block text-sm font-medium text-gray-700">
                 Confirm New Password
               </label>
               <input
                 type="password"
-                id="new_password_confirmation"
-                name="new_password_confirmation"
-                value={formData.new_password_confirmation}
+                id="confirm_password"
+                name="confirm_password"
+                value={formData.confirm_password}
                 onChange={handleInputChange}
                 placeholder="Confirm new password"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"

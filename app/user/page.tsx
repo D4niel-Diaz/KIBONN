@@ -47,6 +47,7 @@ const UserDashboard = () => {
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Update current time every second
   useEffect(() => {
@@ -69,6 +70,7 @@ const UserDashboard = () => {
 
   const fetchBooks = async () => {
     setLoading(prev => ({...prev, books: true}));
+    setError(null);
     try {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/books`,
@@ -97,11 +99,12 @@ const UserDashboard = () => {
       }));
       
       setBooks(formattedBooks);
-    } catch (error: any) {
-      console.error('Book fetch error:', error);
+    } catch (error) {
+      const axiosError = error as Error;
+      console.error('Book fetch error:', axiosError);
+      setError(axiosError.message || "Failed to load books");
       toast.error(
-        error.response?.data?.message || 
-        error.response?.data?.error || 
+        axiosError.message || 
         "Failed to load books"
       );
     } finally {
