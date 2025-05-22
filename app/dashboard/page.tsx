@@ -19,9 +19,68 @@ import {
   HomeIcon,
   ChartBarIcon,
   CogIcon,
-  UserCircleIcon
+  UserCircleIcon,
+  XMarkIcon,
+  BookOpenIcon as BookIcon,
+  UsersIcon,
+  ClockIcon as ClockOutlineIcon,
+  ExclamationCircleIcon,
+  MagnifyingGlassIcon as SearchIcon,
+  PlusCircleIcon,
+  PencilSquareIcon,
+  TrashIcon as TrashOutlineIcon,
+  ArrowPathIcon as ArrowPathOutlineIcon,
+  HomeIcon as HomeOutlineIcon,
+  ChartBarIcon as ChartBarOutlineIcon,
+  CogIcon as CogOutlineIcon,
+  UserCircleIcon as UserCircleOutlineIcon,
+  XMarkIcon as XMarkOutlineIcon,
+  BookmarkIcon,
+  UserPlusIcon,
+  BookmarkSlashIcon,
+  CalendarIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  PencilSquareIcon as EditIcon,
+  TrashIcon as DeleteIcon,
+  DocumentDuplicateIcon,
+  ArchiveBoxIcon,
+  FolderIcon,
+  ShoppingCartIcon,
+  ChatBubbleLeftIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline';
 import ProfileModal from "@/components/ProfileModal";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import { Bar, Line, Doughnut } from 'react-chartjs-2';
+import Loader from "@/components/loader";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 interface Book {
   id: number;
@@ -48,20 +107,12 @@ interface User {
 
 interface Transaction {
   id: number;
-  book_id: number;
-  user_id: number;
+  user_name: string;
+  book_title: string;
   borrowed_date: string;
   due_date: string;
   returned_date: string | null;
-  status: 'borrowed' | 'returned';
-  book: {
-    title: string;
-    author: string;
-  };
-  user: {
-    name: string;
-    email: string;
-  };
+  status: string;
 }
 
 interface DashboardStats {
@@ -100,7 +151,13 @@ const AdminDashboard = () => {
     users: { current_page: 1, last_page: 1, per_page: 10, total: 0 },
     transactions: { current_page: 1, last_page: 1, per_page: 10, total: 0 }
   });
-  const [searchTerm, setSearchTerm] = useState({
+  const [searchTerm, setSearchTerm] = useState<{
+    dashboard: string;
+    books: string;
+    users: string;
+    transactions: string;
+  }>({
+    dashboard: "",
     books: "",
     users: "",
     transactions: ""
@@ -124,21 +181,90 @@ const AdminDashboard = () => {
   ]);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Add new state for user management
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [newUser, setNewUser] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "user"
+  });
+
+  // Add new state for transaction management
+  const [showAddTransactionModal, setShowAddTransactionModal] = useState(false);
+  const [newTransaction, setNewTransaction] = useState({
+    book_id: "",
+    user_id: "",
+    due_date: ""
+  });
+
+  // Add error state
+  const [error, setError] = useState<string | null>(null);
+
+  // Library Statistics Data
+  const libraryStatsData = {
+    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    datasets: [
+      {
+        label: 'Books Borrowed',
+        data: [12, 19, 15, 17, 14, 8, 5],
+        backgroundColor: ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7', '#45B7D1', '#FF6B6B', '#4ECDC4'],
+        borderWidth: 0,
+      },
+    ],
+  };
+
+  // Book Categories Data
+  const bookCategoriesData = {
+    labels: ['Fiction', 'Non-Fiction', 'Academic', 'Children'],
+    datasets: [{
+      data: [40, 20, 30, 10],
+      backgroundColor: ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7'],
+      borderWidth: 0,
+    }],
+  };
+
+  // Recent Activity Data
+  const recentActivityData = {
+    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+    datasets: [
+      {
+        label: 'Borrowing Trends',
+        data: [8, 12, 15, 10, 14, 9],
+        borderColor: '#4ECDC4',
+        backgroundColor: 'rgba(78, 205, 196, 0.1)',
+        fill: true,
+        tension: 0.4,
+      },
+    ],
+  };
+
+  // Book Status Data
+  const bookStatusData = {
+    labels: ['Available', 'Borrowed', 'Reserved'],
+    datasets: [
+      {
+        label: 'Books',
+        data: [65, 25, 10],
+        backgroundColor: ['#4ECDC4', '#FF6B6B', '#6C5CE7'],
+      },
+    ],
+  };
+
   useEffect(() => {
     if (!isLoading) {
       if (!authToken) {
         router.push("/auth");
       } else if (user?.role !== 'admin') {
         router.push("/");
+      } else {
+        // Only fetch data if we're authenticated and have admin role
+        fetchDashboardStats();
       }
     }
   }, [authToken, isLoading, router, user]);
-
-  useEffect(() => {
-    if (authToken && user?.role === 'admin') {
-      fetchDashboardStats();
-    }
-  }, [authToken, user]);
 
   useEffect(() => {
     if (authToken && user?.role === 'admin') {
@@ -161,6 +287,7 @@ const AdminDashboard = () => {
 
   const fetchDashboardStats = async () => {
     setLoading(prev => ({...prev, dashboard: true}));
+    setError(null);
     try {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/dashboard-stats`,
@@ -171,9 +298,11 @@ const AdminDashboard = () => {
           }
         }
       );
+      console.log('Dashboard stats response:', response.data); // Debug log
       setStats(response.data.data);
     } catch (error: any) {
       console.error('Dashboard stats fetch error:', error);
+      setError(error.response?.data?.message || "Failed to load dashboard statistics");
       toast.error(
         error.response?.data?.message || 
         "Failed to load dashboard statistics"
@@ -185,7 +314,9 @@ const AdminDashboard = () => {
 
   const fetchBooks = async (page = 1, search = "") => {
     setLoading(prev => ({...prev, books: true}));
+    setError(null);
     try {
+      console.log('Fetching books...'); // Debug log
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/books`,
         {
@@ -201,21 +332,29 @@ const AdminDashboard = () => {
         }
       );
       
-      setBooks(response.data.data);
-      setPagination(prev => ({
-        ...prev,
-        books: {
-          current_page: response.data.meta?.current_page || 1,
-          last_page: response.data.meta?.last_page || 1,
-          per_page: response.data.meta?.per_page || 10,
-          total: response.data.meta?.total || 0
-        }
-      }));
+      console.log('Books response:', response.data); // Debug log
+      
+      if (response.data && Array.isArray(response.data.data)) {
+        setBooks(response.data.data);
+        setPagination(prev => ({
+          ...prev,
+          books: {
+            current_page: response.data.meta?.current_page || 1,
+            last_page: response.data.meta?.last_page || 1,
+            per_page: response.data.meta?.per_page || 10,
+            total: response.data.meta?.total || 0
+          }
+        }));
+      } else {
+        console.error('Invalid books data format:', response.data);
+        throw new Error("Invalid response format");
+      }
     } catch (error: any) {
       console.error('Books fetch error:', error);
+      setError(error.response?.data?.message || "Failed to load books");
       toast.error(
         error.response?.data?.message || 
-        "Failed to load books"
+        "Failed to load books. Please try again."
       );
     } finally {
       setLoading(prev => ({...prev, books: false}));
@@ -264,6 +403,7 @@ const AdminDashboard = () => {
   const fetchTransactions = async (page = 1, search = "") => {
     setLoading(prev => ({...prev, transactions: true}));
     try {
+      console.log('Fetching transactions...'); // Debug log
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/transactions`,
         {
@@ -279,21 +419,39 @@ const AdminDashboard = () => {
         }
       );
       
-      setTransactions(response.data.data);
-      setPagination(prev => ({
-        ...prev,
-        transactions: {
-          current_page: response.data.meta?.current_page || 1,
-          last_page: response.data.meta?.last_page || 1,
-          per_page: response.data.meta?.per_page || 10,
-          total: response.data.meta?.total || 0
-        }
-      }));
+      console.log('Transaction response:', response.data); // Debug log
+      
+      if (response.data && Array.isArray(response.data.data)) {
+        // Ensure each transaction has the required fields
+        const formattedTransactions = response.data.data.map((transaction: any) => ({
+          id: transaction.id,
+          user_name: transaction.user_name || transaction.user?.name || 'Unknown User',
+          book_title: transaction.book_title || transaction.book?.title || 'Unknown Book',
+          borrowed_date: transaction.borrowed_date || transaction.created_at,
+          due_date: transaction.due_date,
+          returned_date: transaction.returned_date,
+          status: transaction.status || 'borrowed'
+        }));
+        
+        setTransactions(formattedTransactions);
+        setPagination(prev => ({
+          ...prev,
+          transactions: {
+            current_page: response.data.meta?.current_page || 1,
+            last_page: response.data.meta?.last_page || 1,
+            per_page: response.data.meta?.per_page || 10,
+            total: response.data.meta?.total || 0
+          }
+        }));
+      } else {
+        console.error('Invalid transaction data format:', response.data); // Debug log
+        throw new Error("Invalid response format");
+      }
     } catch (error: any) {
       console.error('Transactions fetch error:', error);
       toast.error(
         error.response?.data?.message || 
-        "Failed to load transactions"
+        "Failed to load transactions. Please try again."
       );
     } finally {
       setLoading(prev => ({...prev, transactions: false}));
@@ -305,38 +463,92 @@ const AdminDashboard = () => {
     setLoading(prev => ({...prev, action: true}));
     
     try {
+      // Validate required fields
+      if (!newBook.title || !newBook.author || !newBook.genre) {
+        toast.error("Please fill in all required fields");
+        return;
+      }
+
+      // Validate total_copies
+      const totalCopies = Number(newBook.total_copies);
+      if (isNaN(totalCopies) || totalCopies < 1) {
+        toast.error("Number of copies must be at least 1");
+        return;
+      }
+
+      console.log('Adding book:', newBook); // Debug log
+
+      const bookData = {
+        title: newBook.title,
+        author: newBook.author,
+        genre: newBook.genre,
+        description: newBook.description || "No description provided",
+        total_copies: totalCopies,
+        available_copies: totalCopies,
+        publisher: newBook.publisher || "Unknown"
+      };
+
+      console.log('Sending book data:', bookData); // Debug log
+
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/books`,
-        {
-          ...newBook,
-          available_copies: newBook.total_copies
-        },
+        bookData,
         { 
           headers: { 
             Authorization: `Bearer ${authToken}`,
-            Accept: 'application/json'
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
           }
         }
       );
       
-      setBooks(prev => [...prev, response.data.data]);
-      setShowAddBookModal(false);
-      setNewBook({
-        title: "",
-        author: "",  
-        genre: "",
-        description: "",
-        total_copies: 1,
-        publisher: ""
-      });
+      console.log('Book response:', response.data); // Debug log
       
-      toast.success("Book added successfully");
-      fetchDashboardStats();
+      if (response.data && response.data.data) {
+        // Add the new book to the list with proper number formatting
+        const newBookData = {
+          id: response.data.data.id,
+          title: response.data.data.title,
+          author: response.data.data.author,
+          genre: response.data.data.genre,
+          description: response.data.data.description,
+          total_copies: Number(response.data.data.total_copies),
+          available_copies: Number(response.data.data.available_copies),
+          publisher: response.data.data.publisher,
+          created_at: response.data.data.created_at,
+          updated_at: response.data.data.updated_at
+        };
+        
+        console.log('New book data:', newBookData); // Debug log
+        
+        // Update the books list
+        setBooks(prev => [...prev, newBookData]);
+        
+        // Reset form and close modal
+        setShowAddBookModal(false);
+        setNewBook({
+          title: "",
+          author: "",  
+          genre: "",
+          description: "",
+          total_copies: 1,
+          publisher: ""
+        });
+        
+        toast.success("Book added successfully");
+        
+        // Refresh the books list
+        await fetchBooks();
+        await fetchDashboardStats();
+      } else {
+        console.error('Invalid response format:', response.data);
+        throw new Error("Invalid response format");
+      }
     } catch (error: any) {
       console.error('Add book error:', error);
       toast.error(
         error.response?.data?.message || 
-        "Failed to add book"
+        "Failed to add book. Please try again."
       );
     } finally {
       setLoading(prev => ({...prev, action: false}));
@@ -484,913 +696,1305 @@ const AdminDashboard = () => {
     }
   };
 
-  if (isLoading || !authToken || user?.role !== 'admin') {
+  // Add user CRUD operations
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(prev => ({...prev, action: true}));
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/users`,
+        newUser,
+        { 
+          headers: { 
+            Authorization: `Bearer ${authToken}`,
+            Accept: 'application/json'
+          }
+        }
+      );
+      
+      setUsers(prev => [...prev, response.data.data]);
+      setShowAddUserModal(false);
+      setNewUser({
+        name: "",
+        email: "",
+        password: "",
+        role: "user"
+      });
+      
+      toast.success("User added successfully");
+      fetchDashboardStats();
+    } catch (error: any) {
+      console.error('Add user error:', error);
+      toast.error(
+        error.response?.data?.message || 
+        "Failed to add user"
+      );
+    } finally {
+      setLoading(prev => ({...prev, action: false}));
+    }
+  };
+
+  const handleUpdateUser = async (userId: number, userData: Partial<User>) => {
+    setLoading(prev => ({...prev, action: true}));
+    try {
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/users/${userId}`,
+        userData,
+        { 
+          headers: { 
+            Authorization: `Bearer ${authToken}`,
+            Accept: 'application/json'
+          }
+        }
+      );
+      
+      toast.success("User updated successfully");
+      fetchUsers();
+      fetchDashboardStats();
+      setShowEditUserModal(false);
+    } catch (error: any) {
+      console.error('Update user error:', error);
+      toast.error(
+        error.response?.data?.message || 
+        "Failed to update user"
+      );
+    } finally {
+      setLoading(prev => ({...prev, action: false}));
+    }
+  };
+
+  // Add transaction CRUD operations
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(prev => ({...prev, action: true}));
+    try {
+      console.log('Adding transaction:', newTransaction); // Debug log
+      
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/transactions`,
+        newTransaction,
+        { 
+          headers: { 
+            Authorization: `Bearer ${authToken}`,
+            Accept: 'application/json'
+          }
+        }
+      );
+      
+      console.log('Transaction response:', response.data); // Debug log
+      
+      if (response.data && response.data.data) {
+        const newTransactionData = {
+          id: response.data.data.id,
+          user_name: response.data.data.user_name || response.data.data.user?.name,
+          book_title: response.data.data.book_title || response.data.data.book?.title,
+          borrowed_date: response.data.data.borrowed_date || response.data.data.created_at,
+          due_date: response.data.data.due_date,
+          returned_date: response.data.data.returned_date,
+          status: response.data.data.status || 'borrowed'
+        };
+        
+        setTransactions(prev => [...prev, newTransactionData]);
+        setShowAddTransactionModal(false);
+        setNewTransaction({
+          book_id: "",
+          user_id: "",
+          due_date: ""
+        });
+        
+        toast.success("Transaction added successfully");
+        fetchDashboardStats();
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (error: any) {
+      console.error('Add transaction error:', error);
+      toast.error(
+        error.response?.data?.message || 
+        "Failed to add transaction. Please try again."
+      );
+    } finally {
+      setLoading(prev => ({...prev, action: false}));
+    }
+  };
+
+  const handleReturnBook = async (transactionId: number) => {
+    setLoading(prev => ({...prev, action: true}));
+    try {
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/transactions/${transactionId}/return`,
+        {},
+        { 
+          headers: { 
+            Authorization: `Bearer ${authToken}`,
+            Accept: 'application/json'
+          }
+        }
+      );
+      
+      toast.success("Book returned successfully");
+      fetchTransactions();
+      fetchDashboardStats();
+    } catch (error: any) {
+      console.error('Return book error:', error);
+      toast.error(
+        error.response?.data?.message || 
+        "Failed to return book"
+      );
+    } finally {
+      setLoading(prev => ({...prev, action: false}));
+    }
+  };
+
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-          <p className="text-gray-600 font-medium">Loading dashboard...</p>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (!authToken) {
+    router.push("/auth");
+    return null;
+  }
+
+  if (user?.role !== 'admin') {
+    router.push("/");
+    return null;
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="bg-red-500 text-white p-4 rounded-lg">
+          <p className="text-lg font-semibold">Error</p>
+          <p>{error}</p>
+          <button 
+            onClick={() => {
+              setError(null);
+              fetchDashboardStats();
+            }}
+            className="mt-2 px-4 py-2 bg-white text-red-500 rounded hover:bg-gray-100"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="flex">
-        {/* Sidebar */}
-        <div className="w-64 min-h-screen bg-white shadow-lg border-r border-gray-200">
-          <div className="p-6">
-            <div className="flex items-center space-x-4 mb-8">
-              <div className="h-12 w-12 rounded-full bg-gradient-to-r from-gray-600 to-gray-700 flex items-center justify-center shadow-md">
-                {user?.profile_image ? (
-                  <img 
-                    src={`${process.env.NEXT_PUBLIC_API_URL}/storage/${user.profile_image}`} 
-                    alt={user.name}
-                    className="h-12 w-12 rounded-full object-cover ring-2 ring-white"
-                    onError={(e) => {
-                      e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=4B5563&color=fff`;
-                    }}
-                  />
-                ) : (
-                  <span className="text-white text-lg font-medium">
-                    {user?.name?.charAt(0).toUpperCase()}
-                  </span>
-                )}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
-                <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full inline-block">{user?.role}</p>
-              </div>
-            </div>
-
-            <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab("dashboard")}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
-                  activeTab === "dashboard"
-                    ? "bg-gradient-to-r from-gray-600 to-gray-700 text-white shadow-md"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                <HomeIcon className="mr-3 h-5 w-5" />
-                Dashboard
-              </button>
-              <button
-                onClick={() => setActiveTab("books")}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
-                  activeTab === "books"
-                    ? "bg-gradient-to-r from-gray-600 to-gray-700 text-white shadow-md"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                <BookOpenIcon className="mr-3 h-5 w-5" />
-                Books
-              </button>
-              <button
-                onClick={() => setActiveTab("users")}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
-                  activeTab === "users"
-                    ? "bg-gradient-to-r from-gray-600 to-gray-700 text-white shadow-md"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                <UserGroupIcon className="mr-3 h-5 w-5" />
-                Users
-              </button>
-              <button
-                onClick={() => setActiveTab("transactions")}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
-                  activeTab === "transactions"
-                    ? "bg-gradient-to-r from-gray-600 to-gray-700 text-white shadow-md"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                <ClockIcon className="mr-3 h-5 w-5" />
-                Transactions
-              </button>
-            </nav>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1 p-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-900 bg-gradient-to-r from-gray-600 to-gray-700 bg-clip-text text-transparent">
-              {activeTab === "dashboard" && "Dashboard Overview"}
-              {activeTab === "books" && "Book Management"}
-              {activeTab === "users" && "User Management"}
-              {activeTab === "transactions" && "Transaction History"}
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              {activeTab === "dashboard" && "View your library statistics and recent activities"}
-              {activeTab === "books" && "Manage your library's book collection"}
-              {activeTab === "users" && "Manage library users and their accounts"}
-              {activeTab === "transactions" && "Track book borrowing and returns"}
-            </p>
-          </div>
-
-          {/* Dashboard Content */}
-          {activeTab === "dashboard" && (
-            <div className="space-y-6">
-              {/* Quick Stats */}
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="bg-white overflow-hidden shadow-lg rounded-xl hover:shadow-xl transition-all duration-200 border border-gray-100">
-                  <div className="p-6">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg p-3 shadow-md">
-                        <BookOpenIcon className="h-6 w-6 text-white" />
-                      </div>
-                      <div className="ml-4 w-0 flex-1">
-                        <dl>
-                          <dt className="text-sm font-medium text-gray-500 truncate">Total Books</dt>
-                          <dd className="flex items-baseline">
-                            <div className="text-2xl font-semibold text-gray-900">{stats?.books_count}</div>
-                            <div className="ml-2 flex items-baseline text-sm font-semibold text-gray-600">
-                              <span className="sr-only">Borrowed</span>
-                              {stats?.transactions_count ? (
-                                <span>
-                                  {stats.transactions_count} books borrowed
-                                </span>
-                              ) : (
-                                <span>No books borrowed</span>
-                              )}
-                            </div>
-                          </dd>
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white overflow-hidden shadow-lg rounded-xl hover:shadow-xl transition-all duration-200 border border-gray-100">
-                  <div className="p-6">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg p-3 shadow-md">
-                        <UserGroupIcon className="h-6 w-6 text-white" />
-                      </div>
-                      <div className="ml-4 w-0 flex-1">
-                        <dl>
-                          <dt className="text-sm font-medium text-gray-500 truncate">Total Users</dt>
-                          <dd className="flex items-baseline">
-                            <div className="text-2xl font-semibold text-gray-900">{stats?.users_count}</div>
-                            <div className="ml-2 flex items-baseline text-sm font-semibold text-gray-600">
-                              <span className="sr-only">Active</span>
-                              {stats?.transactions_count || 0} active borrowers
-                            </div>
-                          </dd>
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white overflow-hidden shadow-lg rounded-xl hover:shadow-xl transition-all duration-200 border border-gray-100">
-                  <div className="p-6">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg p-3 shadow-md">
-                        <ClockIcon className="h-6 w-6 text-white" />
-                      </div>
-                      <div className="ml-4 w-0 flex-1">
-                        <dl>
-                          <dt className="text-sm font-medium text-gray-500 truncate">Active Borrows</dt>
-                          <dd className="flex items-baseline">
-                            <div className="text-2xl font-semibold text-gray-900">{stats?.transactions_count}</div>
-                            <div className="ml-2 flex items-baseline text-sm font-semibold text-gray-600">
-                              <span className="sr-only">Current</span>
-                              Currently borrowed
-                            </div>
-                          </dd>
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white overflow-hidden shadow-lg rounded-xl hover:shadow-xl transition-all duration-200 border border-gray-100">
-                  <div className="p-6">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg p-3 shadow-md">
-                        <ExclamationTriangleIcon className="h-6 w-6 text-white" />
-                      </div>
-                      <div className="ml-4 w-0 flex-1">
-                        <dl>
-                          <dt className="text-sm font-medium text-gray-500 truncate">Overdue</dt>
-                          <dd className="flex items-baseline">
-                            <div className="text-2xl font-semibold text-gray-900">{stats?.overdue_count}</div>
-                            <div className="ml-2 flex items-baseline text-sm font-semibold text-gray-600">
-                              <span className="sr-only">Overdue</span>
-                              {stats?.overdue_count ? `${stats.overdue_count} books overdue` : 'No overdue books'}
-                            </div>
-                          </dd>
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Recent Activity */}
-                <div className="lg:col-span-2 bg-white shadow-lg rounded-xl border border-gray-100">
-                  <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
-                    <button
-                      onClick={() => setActiveTab("transactions")}
-                      className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors duration-200"
-                    >
-                      View All
-                    </button>
-                  </div>
-                  <div className="p-6">
-                    <div className="flow-root">
-                      <ul className="divide-y divide-gray-200">
-                        {stats?.recent_transactions.map((tx) => (
-                          <li key={tx.id} className="py-4 hover:bg-gray-50 transition-colors duration-200 rounded-lg px-2">
-                            <div className="flex items-center space-x-4">
-                              <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center shadow-md ${
-                                tx.status === 'borrowed' ? 'bg-gradient-to-r from-blue-500 to-cyan-600' : 'bg-gradient-to-r from-green-500 to-emerald-600'
-                              }`}>
-                                {tx.status === 'borrowed' ? (
-                                  <BookOpenIcon className="h-5 w-5 text-white" />
-                                ) : (
-                                  <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                                  </svg>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {tx.user_name}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                  {tx.status === 'borrowed' ? (
-                                    <span>borrowed <span className="font-medium text-gray-900">{tx.book_title}</span> (Due: {formatDate(tx.due_date)})</span>
-                                  ) : (
-                                    <span>returned <span className="font-medium text-gray-900">{tx.book_title}</span></span>
-                                  )}
-                                </p>
-                              </div>
-                              <div className="flex flex-col items-end">
-                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium shadow-sm ${
-                                  tx.status === 'borrowed' 
-                                    ? 'bg-blue-100 text-blue-800' 
-                                    : 'bg-green-100 text-green-800'
-                                }`}>
-                                  {tx.status === 'borrowed' ? 'Borrowed' : 'Returned'}
-                                </span>
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="bg-white shadow-lg rounded-xl border border-gray-100">
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="space-y-4">
-                      <button
-                        onClick={() => setShowAddBookModal(true)}
-                        className="w-full flex items-center p-4 rounded-xl border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-all duration-200"
-                      >
-                        <div className="flex-shrink-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg p-2">
-                          <PlusIcon className="h-6 w-6 text-white" />
-                        </div>
-                        <div className="ml-4 text-left">
-                          <span className="block text-sm font-medium text-gray-900">Add New Book</span>
-                          <span className="block text-xs text-gray-500">Add a new book to the library collection</span>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("users")}
-                        className="w-full flex items-center p-4 rounded-xl border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-all duration-200"
-                      >
-                        <div className="flex-shrink-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg p-2">
-                          <UserGroupIcon className="h-6 w-6 text-white" />
-                        </div>
-                        <div className="ml-4 text-left">
-                          <span className="block text-sm font-medium text-gray-900">Manage Users</span>
-                          <span className="block text-xs text-gray-500">View and manage library user accounts</span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Books Tab Content */}
-          {activeTab === "books" && (
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-lg font-medium text-gray-900">Book Management</h3>
-                <button 
-                  onClick={() => setShowAddBookModal(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Add Book
-                </button>
-              </div>
-              <div className="p-6">
-                <div className="mb-4">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      placeholder="Search books..."
-                      value={searchTerm.books}
-                      onChange={(e) => {
-                        setSearchTerm(prev => ({...prev, books: e.target.value}));
-                        fetchBooks(1, e.target.value);
-                      }}
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
-                    </div>
-                  </div>
-                </div>
-
-                {loading.books ? (
-                  <div className="flex justify-center items-center h-64">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-                  </div>
-                ) : books.length === 0 ? (
-                  <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded relative" role="alert">
-                    No books found
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Author</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Genre</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Copies</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Available</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {books.map(book => (
-                          <tr key={book.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{book.title}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{book.author}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{book.genre}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{book.total_copies}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{book.available_copies}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <div className="flex space-x-3">
-                                <button
-                                  className="text-indigo-600 hover:text-indigo-900"
-                                  onClick={() => {
-                                    setCurrentBook(book);
-                                    setShowEditBookModal(true);
-                                  }}
-                                  disabled={loading.action}
-                                >
-                                  <PencilIcon className="h-5 w-5" />
-                                </button>
-                                <button
-                                  className="text-red-600 hover:text-red-900"
-                                  onClick={() => handleDeleteBook(book.id)}
-                                  disabled={loading.action}
-                                >
-                                  <TrashIcon className="h-5 w-5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {books.length > 0 && (
-                  <div className="mt-4 flex justify-center">
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                      <button
-                        onClick={() => fetchBooks(pagination.books.current_page - 1, searchTerm.books)}
-                        disabled={pagination.books.current_page === 1}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
-                          pagination.books.current_page === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        Previous
-                      </button>
-                      {Array.from({length: pagination.books.last_page}, (_, i) => i + 1).map(page => (
-                        <button
-                          key={page}
-                          onClick={() => fetchBooks(page, searchTerm.books)}
-                          className={`relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium ${
-                            pagination.books.current_page === page
-                              ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
-                              : 'text-gray-500 hover:bg-gray-50'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => fetchBooks(pagination.books.current_page + 1, searchTerm.books)}
-                        disabled={pagination.books.current_page === pagination.books.last_page}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
-                          pagination.books.current_page === pagination.books.last_page ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        Next
-                      </button>
-                    </nav>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Users Tab Content */}
-          {activeTab === "users" && (
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">User Management</h3>
-              </div>
-              <div className="p-6">
-                <div className="mb-4">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      placeholder="Search users..."
-                      value={searchTerm.users}
-                      onChange={(e) => {
-                        setSearchTerm(prev => ({...prev, users: e.target.value}));
-                        fetchUsers(1, e.target.value);
-                      }}
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
-                    </div>
-                  </div>
-                </div>
-
-                {loading.users ? (
-                  <div className="flex justify-center items-center h-64">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-                  </div>
-                ) : users.length === 0 ? (
-                  <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded relative" role="alert">
-                    No users found
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {users.map(user => (
-                          <tr key={user.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                user.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
-                              }`}>
-                                {user.role}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatDate(user.created_at)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <button
-                                className="text-red-600 hover:text-red-900"
-                                onClick={() => handleDeleteUser(user.id)}
-                                disabled={loading.action}
-                              >
-                                <TrashIcon className="h-5 w-5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {users.length > 0 && (
-                  <div className="mt-4 flex justify-center">
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                      <button
-                        onClick={() => fetchUsers(pagination.users.current_page - 1, searchTerm.users)}
-                        disabled={pagination.users.current_page === 1}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
-                          pagination.users.current_page === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        Previous
-                      </button>
-                      {Array.from({length: pagination.users.last_page}, (_, i) => i + 1).map(page => (
-                        <button
-                          key={page}
-                          onClick={() => fetchUsers(page, searchTerm.users)}
-                          className={`relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium ${
-                            pagination.users.current_page === page
-                              ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
-                              : 'text-gray-500 hover:bg-gray-50'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => fetchUsers(pagination.users.current_page + 1, searchTerm.users)}
-                        disabled={pagination.users.current_page === pagination.users.last_page}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
-                          pagination.users.current_page === pagination.users.last_page ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        Next
-                      </button>
-                    </nav>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Transactions Tab Content */}
-          {activeTab === "transactions" && (
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Transaction History</h3>
-              </div>
-              <div className="p-6">
-                <div className="mb-4">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      placeholder="Search transactions..."
-                      value={searchTerm.transactions}
-                      onChange={(e) => {
-                        setSearchTerm(prev => ({...prev, transactions: e.target.value}));
-                        fetchTransactions(1, e.target.value);
-                      }}
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
-                    </div>
-                  </div>
-                </div>
-
-                {loading.transactions ? (
-                  <div className="flex justify-center items-center h-64">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-                  </div>
-                ) : transactions.length === 0 ? (
-                  <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded relative" role="alert">
-                    No transactions found
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Borrowed Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {transactions.map(tx => (
-                          <tr key={tx.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{tx.user.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {tx.book.title} by {tx.book.author}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <div>{formatDate(tx.borrowed_date)}</div>
-                              <div className="text-xs text-gray-400">{formatTime(tx.borrowed_date)}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <div>{formatDate(tx.due_date)}</div>
-                              <div className="text-xs text-gray-400">{formatTime(tx.due_date)}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                tx.status === 'returned' 
-                                  ? 'bg-green-100 text-green-800' 
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}>
-                                {tx.status === 'returned' ? 'Returned' : 'Borrowed'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {transactions.length > 0 && (
-                  <div className="mt-4 flex justify-center">
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                      <button
-                        onClick={() => fetchTransactions(pagination.transactions.current_page - 1, searchTerm.transactions)}
-                        disabled={pagination.transactions.current_page === 1}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
-                          pagination.transactions.current_page === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        Previous
-                      </button>
-                      {Array.from({length: pagination.transactions.last_page}, (_, i) => i + 1).map(page => (
-                        <button
-                          key={page}
-                          onClick={() => fetchTransactions(page, searchTerm.transactions)}
-                          className={`relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium ${
-                            pagination.transactions.current_page === page
-                              ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
-                              : 'text-gray-500 hover:bg-gray-50'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => fetchTransactions(pagination.transactions.current_page + 1, searchTerm.transactions)}
-                        disabled={pagination.transactions.current_page === pagination.transactions.last_page}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
-                          pagination.transactions.current_page === pagination.transactions.last_page ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        Next
-                      </button>
-                    </nav>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+    <div className="min-h-screen bg-gray-900 text-white">
+      {/* Sidebar */}
+      <div className="fixed left-0 top-0 h-full w-16 bg-gray-800 flex flex-col items-center py-6 space-y-4">
+        <button 
+          onClick={() => setActiveTab("dashboard")}
+          className={`p-2 rounded-lg hover:bg-gray-700 ${activeTab === "dashboard" ? "bg-gray-700" : ""}`}
+        >
+          <HomeIcon className="h-6 w-6 text-blue-400" />
+        </button>
+        <button 
+          onClick={() => setActiveTab("books")}
+          className={`p-2 rounded-lg hover:bg-gray-700 ${activeTab === "books" ? "bg-gray-700" : ""}`}
+        >
+          <BookIcon className="h-6 w-6 text-purple-400" />
+        </button>
+        <button 
+          onClick={() => setActiveTab("users")}
+          className={`p-2 rounded-lg hover:bg-gray-700 ${activeTab === "users" ? "bg-gray-700" : ""}`}
+        >
+          <UsersIcon className="h-6 w-6 text-green-400" />
+        </button>
+        <button 
+          onClick={() => setActiveTab("transactions")}
+          className={`p-2 rounded-lg hover:bg-gray-700 ${activeTab === "transactions" ? "bg-gray-700" : ""}`}
+        >
+          <ClockIcon className="h-6 w-6 text-yellow-400" />
+        </button>
+        <div className="flex-grow"></div>
+        <button 
+          onClick={() => {
+            localStorage.removeItem('authToken');
+            router.push('/auth');
+          }}
+          className="p-2 rounded-lg hover:bg-gray-700"
+        >
+          <ArrowRightOnRectangleIcon className="h-6 w-6 text-red-400" />
+        </button>
       </div>
 
-      {/* Add Book Modal */}
-      {showAddBookModal && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Add New Book</h3>
-              <button
-                onClick={() => setShowAddBookModal(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <span className="sr-only">Close</span>
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+      {/* Main Content */}
+      <div className="ml-16 p-8">
+        {/* Top Bar */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center space-x-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white">
+                Hello, {user?.name}!
+              </h2>
+              <p className="text-sm text-gray-400">Admin since {formatDate(user?.created_at)}</p>
             </div>
-            <form onSubmit={handleAddBook}>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="title" className="block text-sm font-medium text-gray-700">Title</label>
-                  <input
-                    type="text"
-                    id="title"
-                    name="title"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={newBook.title}
-                    onChange={(e) => setNewBook(prev => ({...prev, title: e.target.value}))}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="author" className="block text-sm font-medium text-gray-700">Author</label>
-                  <input
-                    type="text"
-                    id="author"
-                    name="author"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={newBook.author}
-                    onChange={(e) => setNewBook(prev => ({...prev, author: e.target.value}))}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="genre" className="block text-sm font-medium text-gray-700">Genre</label>
-                  <input
-                    type="text"
-                    id="genre"
-                    name="genre"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={newBook.genre}
-                    onChange={(e) => setNewBook(prev => ({...prev, genre: e.target.value}))}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
-                    id="description"
-                    name="description"
-                    rows={3}
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={newBook.description}
-                    onChange={(e) => setNewBook(prev => ({...prev, description: e.target.value}))}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="total_copies" className="block text-sm font-medium text-gray-700">Total Copies</label>
-                  <input
-                    type="number"
-                    id="total_copies"
-                    name="total_copies"
-                    min="1"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={newBook.total_copies}
-                    onChange={(e) => setNewBook(prev => ({...prev, total_copies: parseInt(e.target.value)}))}
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddBookModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading.action}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  {loading.action ? (
-                    <div className="flex items-center">
-                      <ArrowPathIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                      Adding...
-                    </div>
-                  ) : (
-                    'Add Book'
-                  )}
-                </button>
-              </div>
-            </form>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by book title, author, or category..."
+                className="bg-gray-800 text-white px-4 py-2 rounded-xl pl-10 focus:outline-none focus:ring-2 focus:ring-blue-400 w-80"
+                value={searchTerm[activeTab]}
+                onChange={(e) => {
+                  setSearchTerm(prev => ({...prev, [activeTab]: e.target.value}));
+                  switch(activeTab) {
+                    case "books":
+                      fetchBooks(1, e.target.value);
+                      break;
+                    case "users":
+                      fetchUsers(1, e.target.value);
+                      break;
+                    case "transactions":
+                      fetchTransactions(1, e.target.value);
+                      break;
+                  }
+                }}
+              />
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Edit Book Modal */}
-      {showEditBookModal && currentBook && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Edit Book</h3>
-              <button
-                onClick={() => {
-                  setShowEditBookModal(false);
-                  setCurrentBook(null);
-                }}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <span className="sr-only">Close</span>
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+        {/* Dashboard Content */}
+        {activeTab === "dashboard" && (
+          <>
+            {/* Quick Stats */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-400">Books Currently Borrowed</p>
+                    <p className="text-2xl font-bold text-blue-400">{stats?.transactions_count || 0}</p>
+                    <div className="flex items-center mt-2">
+                      <ArrowUpIcon className="h-4 w-4 text-green-400 mr-1" />
+                      <span className="text-sm text-green-400">12% more than yesterday</span>
+                    </div>
+                  </div>
+                  <BookOpenIcon className="h-8 w-8 text-blue-400" />
+                </div>
+              </div>
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-400">Books Returned Today</p>
+                    <p className="text-2xl font-bold text-purple-400">{stats?.books_count || 0}</p>
+                    <div className="flex items-center mt-2">
+                      <ArrowUpIcon className="h-4 w-4 text-green-400 mr-1" />
+                      <span className="text-sm text-green-400">8% more than last week</span>
+                    </div>
+                  </div>
+                  <ArrowPathIcon className="h-8 w-8 text-purple-400" />
+                </div>
+              </div>
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-400">Books Overdue</p>
+                    <p className="text-2xl font-bold text-red-400">{stats?.overdue_count || 0}</p>
+                    <div className="flex items-center mt-2">
+                      <ArrowDownIcon className="h-4 w-4 text-green-400 mr-1" />
+                      <span className="text-sm text-green-400">5% fewer than last month</span>
+                    </div>
+                  </div>
+                  <ExclamationTriangleIcon className="h-8 w-8 text-red-400" />
+                </div>
+              </div>
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-400">Total Library Members</p>
+                    <p className="text-2xl font-bold text-green-400">{stats?.users_count || 0}</p>
+                    <div className="flex items-center mt-2">
+                      <ArrowUpIcon className="h-4 w-4 text-green-400 mr-1" />
+                      <span className="text-sm text-green-400">15% more than last year</span>
+                    </div>
+                  </div>
+                  <UserGroupIcon className="h-8 w-8 text-green-400" />
+                </div>
+              </div>
             </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleUpdateBook(currentBook.id, {
-                title: currentBook.title,
-                author: currentBook.author,
-                genre: currentBook.genre,
-                description: currentBook.description,
-                total_copies: currentBook.total_copies,
-                publisher: currentBook.publisher
-              });
-            }}>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="edit-title" className="block text-sm font-medium text-gray-700">Title</label>
-                  <input
-                    type="text"
-                    id="edit-title"
-                    name="title"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={currentBook.title}
-                    onChange={(e) => setCurrentBook(prev => prev ? {...prev, title: e.target.value} : null)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="edit-author" className="block text-sm font-medium text-gray-700">Author</label>
-                  <input
-                    type="text"
-                    id="edit-author"
-                    name="author"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={currentBook.author}
-                    onChange={(e) => setCurrentBook(prev => prev ? {...prev, author: e.target.value} : null)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="edit-genre" className="block text-sm font-medium text-gray-700">Genre</label>
-                  <input
-                    type="text"
-                    id="edit-genre"
-                    name="genre"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={currentBook.genre}
-                    onChange={(e) => setCurrentBook(prev => prev ? {...prev, genre: e.target.value} : null)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="edit-description" className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
-                    id="edit-description"
-                    name="description"
-                    rows={3}
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={currentBook.description}
-                    onChange={(e) => setCurrentBook(prev => prev ? {...prev, description: e.target.value} : null)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="edit-total-copies" className="block text-sm font-medium text-gray-700">Total Copies</label>
-                  <input
-                    type="number"
-                    id="edit-total-copies"
-                    name="total_copies"
-                    min="1"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    value={currentBook.total_copies}
-                    onChange={(e) => setCurrentBook(prev => prev ? {...prev, total_copies: parseInt(e.target.value)} : null)}
+
+            {/* Charts Row */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
+              {/* Borrowing Dynamics */}
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <h2 className="text-lg font-semibold mb-4">Weekly Book Borrowing Activity</h2>
+                <div className="h-64">
+                  <Bar 
+                    data={libraryStatsData} 
+                    options={{ 
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          display: false
+                        }
+                      },
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                          },
+                          ticks: {
+                            color: '#9CA3AF'
+                          }
+                        },
+                        x: {
+                          grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                          },
+                          ticks: {
+                            color: '#9CA3AF'
+                          }
+                        }
+                      }
+                    }} 
                   />
                 </div>
               </div>
-              <div className="mt-6 flex justify-end space-x-3">
+
+              {/* Borrowing Sources */}
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <h2 className="text-lg font-semibold mb-4">Book Categories Overview</h2>
+                <div className="h-64 relative">
+                  <Doughnut 
+                    data={bookCategoriesData} 
+                    options={{ 
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          position: 'right',
+                          labels: {
+                            color: '#9CA3AF'
+                          }
+                        }
+                      }
+                    }} 
+                  />
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                    <p className="text-sm text-gray-400">Total</p>
+                    <p className="text-xl font-bold text-white">10,000</p>
+                    <p className="text-sm text-gray-400">Books</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Library Overview */}
+            <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 mb-8">
+              <h2 className="text-lg font-semibold mb-4">Monthly Library Activity</h2>
+              <div className="h-64">
+                <Line
+                  data={recentActivityData}
+                  options={{
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        display: false
+                      }
+                    },
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        grid: {
+                          color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                          color: '#9CA3AF'
+                        }
+                      },
+                      x: {
+                        grid: {
+                          color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                          color: '#9CA3AF'
+                        }
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Category Performance */}
+            <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 mb-8">
+              <h2 className="text-lg font-semibold mb-4">Book Availability Status</h2>
+              <div className="h-64">
+                <Bar
+                  data={bookStatusData}
+                  options={{
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        display: false
+                      }
+                    },
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        grid: {
+                          color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                          color: '#9CA3AF'
+                        }
+                      },
+                      x: {
+                        grid: {
+                          color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                          color: '#9CA3AF'
+                        }
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Inventory Status */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <h2 className="text-lg font-semibold mb-4">Book Inventory Status</h2>
+                <div className="h-64 relative">
+                  <Doughnut
+                    data={{
+                      labels: ['Available', 'Borrowed', 'Reserved'],
+                      datasets: [{
+                        data: [50, 30, 20],
+                        backgroundColor: ['#4ECDC4', '#FF6B6B', '#6C5CE7'],
+                        borderWidth: 0,
+                      }]
+                    }}
+                    options={{
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          position: 'right',
+                          labels: {
+                            color: '#9CA3AF'
+                          }
+                        }
+                      }
+                    }}
+                  />
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                    <p className="text-sm text-gray-400">Total</p>
+                    <p className="text-xl font-bold text-white">50,000</p>
+                    <p className="text-sm text-gray-400">Books</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <h2 className="text-lg font-semibold mb-4">User Statistics</h2>
+                <div className="h-64 relative">
+                  <Doughnut
+                    data={{
+                      labels: ['Active', 'Inactive', 'New'],
+                      datasets: [{
+                        data: [60, 25, 15],
+                        backgroundColor: ['#4ECDC4', '#FF6B6B', '#6C5CE7'],
+                        borderWidth: 0,
+                      }]
+                    }}
+                    options={{
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          position: 'right',
+                          labels: {
+                            color: '#9CA3AF'
+                          }
+                        }
+                      }
+                    }}
+                  />
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                    <p className="text-sm text-gray-400">Total</p>
+                    <p className="text-xl font-bold text-white">80,000</p>
+                    <p className="text-sm text-gray-400">Users</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Transactions */}
+            <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+              <h2 className="text-lg font-semibold mb-4">Recent Transactions</h2>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="pb-4">Member Name</th>
+                      <th className="pb-4">Book Title</th>
+                      <th className="pb-4">Borrowed On</th>
+                      <th className="pb-4">Return By</th>
+                      <th className="pb-4">Current Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {transactions.map((transaction) => (
+                      <tr key={transaction.id} className="hover:bg-gray-700">
+                        <td className="py-4">{transaction.user_name}</td>
+                        <td className="py-4">{transaction.book_title}</td>
+                        <td className="py-4">{formatDate(transaction.borrowed_date)}</td>
+                        <td className="py-4">{formatDate(transaction.due_date)}</td>
+                        <td className="py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${
+                            transaction.status === 'borrowed' 
+                              ? 'bg-amber-900 text-amber-200' 
+                              : 'bg-emerald-900 text-emerald-200'
+                          }`}>
+                            {transaction.status === 'borrowed' ? 'Currently Borrowed' : 'Returned'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "books" && (
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Manage Library Books</h2>
+              <button
+                onClick={() => setShowAddBookModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg hover:shadow-blue-500/10 transition-all duration-200"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                <span>Add New Book</span>
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              {loading.books ? (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              ) : books.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No books found. Add a new book to get started.
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="pb-4">Title</th>
+                      <th className="pb-4">Author</th>
+                      <th className="pb-4">Genre</th>
+                      <th className="pb-4">Total Copies</th>
+                      <th className="pb-4">Available Copies</th>
+                      <th className="pb-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {books.map((book) => (
+                      <tr key={book.id} className="hover:bg-gray-700">
+                        <td className="py-4">{book.title}</td>
+                        <td className="py-4">{book.author}</td>
+                        <td className="py-4">{book.genre}</td>
+                        <td className="py-4">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {Number(book.total_copies).toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            book.available_copies > 0 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {Number(book.available_copies).toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="py-4">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => {
+                                setCurrentBook(book);
+                                setShowEditBookModal(true);
+                              }}
+                              className="text-blue-400 hover:text-blue-300"
+                            >
+                              <PencilIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBook(book.id)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "users" && (
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Manage Library Members</h2>
+              <button
+                onClick={() => setShowAddUserModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg hover:shadow-blue-500/10 transition-all duration-200"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                <span>Add New Member</span>
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-700">
+                <thead>
+                  <tr className="text-left text-gray-400">
+                    <th className="pb-4">Name</th>
+                    <th className="pb-4">Email</th>
+                    <th className="pb-4">Role</th>
+                    <th className="pb-4">Joined Date</th>
+                    <th className="pb-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {users.map((user) => (
+                    <tr key={user.id} className="hover:bg-gray-700">
+                      <td className="py-4">{user.name}</td>
+                      <td className="py-4">{user.email}</td>
+                      <td className="py-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${
+                          user.role === 'admin' 
+                            ? 'bg-purple-900 text-purple-200' 
+                            : 'bg-blue-900 text-blue-200'
+                        }`}>
+                          {user.role === 'admin' ? 'Library Staff' : 'Library Member'}
+                        </span>
+                      </td>
+                      <td className="py-4">{formatDate(user.created_at)}</td>
+                      <td className="py-4">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => {
+                              setCurrentUser(user);
+                              setShowEditUserModal(true);
+                            }}
+                            className="text-blue-400 hover:text-blue-300"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "transactions" && (
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Manage Book Borrowing</h2>
+              <button
+                onClick={() => setShowAddTransactionModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg hover:shadow-blue-500/10 transition-all duration-200"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                <span>Record New Borrowing</span>
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              {loading.transactions ? (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              ) : transactions.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No transactions found. Add a new borrowing record to get started.
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="pb-4">Member Name</th>
+                      <th className="pb-4">Book Title</th>
+                      <th className="pb-4">Borrowed On</th>
+                      <th className="pb-4">Return By</th>
+                      <th className="pb-4">Current Status</th>
+                      <th className="pb-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {transactions.map((transaction) => (
+                      <tr key={transaction.id} className="hover:bg-gray-700">
+                        <td className="py-4">{transaction.user_name}</td>
+                        <td className="py-4">{transaction.book_title}</td>
+                        <td className="py-4">{formatDate(transaction.borrowed_date)}</td>
+                        <td className="py-4">{formatDate(transaction.due_date)}</td>
+                        <td className="py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${
+                            transaction.status === 'borrowed' 
+                              ? 'bg-amber-900 text-amber-200' 
+                              : 'bg-emerald-900 text-emerald-200'
+                          }`}>
+                            {transaction.status === 'borrowed' ? 'Currently Borrowed' : 'Returned'}
+                          </span>
+                        </td>
+                        <td className="py-4">
+                          {transaction.status === 'borrowed' && (
+                            <button
+                              onClick={() => handleReturnBook(transaction.id)}
+                              className="text-green-400 hover:text-green-300"
+                            >
+                              <ArrowPathIcon className="h-5 w-5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Add Book Modal */}
+        {showAddBookModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-700">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-semibold text-white">Add a New Book to Library</h3>
                 <button
-                  type="button"
+                  onClick={() => setShowAddBookModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <XMarkOutlineIcon className="h-6 w-6" />
+                </button>
+              </div>
+              <form onSubmit={handleAddBook} className="space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-1">Book Title</label>
+                    <input
+                      type="text"
+                      id="title"
+                      name="title"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter book title"
+                      value={newBook.title}
+                      onChange={(e) => setNewBook(prev => ({...prev, title: e.target.value}))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="author" className="block text-sm font-medium text-gray-300 mb-1">Author's Name</label>
+                    <input
+                      type="text"
+                      id="author"
+                      name="author"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter author's name"
+                      value={newBook.author}
+                      onChange={(e) => setNewBook(prev => ({...prev, author: e.target.value}))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="genre" className="block text-sm font-medium text-gray-300 mb-1">Book Category</label>
+                    <input
+                      type="text"
+                      id="genre"
+                      name="genre"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter book category"
+                      value={newBook.genre}
+                      onChange={(e) => setNewBook(prev => ({...prev, genre: e.target.value}))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="total_copies" className="block text-sm font-medium text-gray-300 mb-1">
+                      Number of Copies
+                      <span className="text-xs text-gray-400 ml-1">(Initial available copies)</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        id="total_copies"
+                        name="total_copies"
+                        min="1"
+                        required
+                        className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all pr-16"
+                        placeholder="Enter number of copies"
+                        value={newBook.total_copies}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (!isNaN(value) && value > 0) {
+                            setNewBook(prev => ({...prev, total_copies: value}));
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (isNaN(value) || value < 1) {
+                            setNewBook(prev => ({...prev, total_copies: 1}));
+                          }
+                        }}
+                      />
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                        <span className="text-gray-400 text-sm">copies</span>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-400">
+                      Available copies will be automatically set to this number
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-700">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBookModal(false)}
+                    className="px-4 py-2 border border-gray-600 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading.action}
+                    className="px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading.action ? (
+                      <div className="flex items-center">
+                        <ArrowPathOutlineIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                        Adding...
+                      </div>
+                    ) : (
+                      'Add Book'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Book Modal */}
+        {showEditBookModal && currentBook && (
+          <div className="fixed inset-0 bg-slate-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-md w-full p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-slate-900">Update Book Information</h3>
+                <button
                   onClick={() => {
                     setShowEditBookModal(false);
                     setCurrentBook(null);
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  className="text-slate-400 hover:text-slate-500"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading.action}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  {loading.action ? (
-                    <div className="flex items-center">
-                      <ArrowPathIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                      Updating...
-                    </div>
-                  ) : (
-                    'Update Book'
-                  )}
+                  <XMarkOutlineIcon className="h-6 w-6" />
                 </button>
               </div>
-            </form>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleUpdateBook(currentBook.id, {
+                  title: currentBook.title,
+                  author: currentBook.author,
+                  genre: currentBook.genre,
+                  description: currentBook.description,
+                  total_copies: currentBook.total_copies,
+                  publisher: currentBook.publisher
+                });
+              }}>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="edit-title" className="block text-sm font-medium text-slate-700">Book Title</label>
+                    <input
+                      type="text"
+                      id="edit-title"
+                      name="title"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={currentBook.title}
+                      onChange={(e) => setCurrentBook(prev => prev ? {...prev, title: e.target.value} : null)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-author" className="block text-sm font-medium text-slate-700">Author's Name</label>
+                    <input
+                      type="text"
+                      id="edit-author"
+                      name="author"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={currentBook.author}
+                      onChange={(e) => setCurrentBook(prev => prev ? {...prev, author: e.target.value} : null)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-genre" className="block text-sm font-medium text-slate-700">Book Category</label>
+                    <input
+                      type="text"
+                      id="edit-genre"
+                      name="genre"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={currentBook.genre}
+                      onChange={(e) => setCurrentBook(prev => prev ? {...prev, genre: e.target.value} : null)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-total-copies" className="block text-sm font-medium text-slate-700">Number of Copies</label>
+                    <input
+                      type="number"
+                      id="edit-total-copies"
+                      name="total_copies"
+                      min="1"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={currentBook.total_copies}
+                      onChange={(e) => setCurrentBook(prev => prev ? {...prev, total_copies: parseInt(e.target.value)} : null)}
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditBookModal(false);
+                      setCurrentBook(null);
+                    }}
+                    className="px-4 py-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading.action}
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    {loading.action ? (
+                      <div className="flex items-center">
+                        <ArrowPathOutlineIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                        Updating...
+                      </div>
+                    ) : (
+                      'Update Book'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Profile Modal */}
-      {showProfileModal && (
-        <ProfileModal
-          isOpen={showProfileModal}
-          onClose={() => setShowProfileModal(false)}
-          user={user}
-        />
-      )}
+        {/* Add User Modal */}
+        {showAddUserModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-gray-700">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-semibold text-white">Add New Library Member</h3>
+                <button
+                  onClick={() => setShowAddUserModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <XMarkOutlineIcon className="h-6 w-6" />
+                </button>
+              </div>
+              <form onSubmit={handleAddUser} className="space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                    <input
+                      type="text"
+                      id="name"
+                      name="name"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter member's name"
+                      value={newUser.name}
+                      onChange={(e) => setNewUser(prev => ({...prev, name: e.target.value}))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                    <input
+                      type="email"
+                      id="email"
+                      name="email"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter member's email"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser(prev => ({...prev, email: e.target.value}))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                    <input
+                      type="password"
+                      id="password"
+                      name="password"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter password"
+                      value={newUser.password}
+                      onChange={(e) => setNewUser(prev => ({...prev, password: e.target.value}))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-1">Role</label>
+                    <select
+                      id="role"
+                      name="role"
+                      required
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none"
+                      value={newUser.role}
+                      onChange={(e) => setNewUser(prev => ({...prev, role: e.target.value}))}
+                    >
+                      <option value="" className="bg-gray-700 text-gray-300">Select a role</option>
+                      <option value="user" className="bg-gray-700 text-gray-300">Library Member</option>
+                      <option value="admin" className="bg-gray-700 text-gray-300">Library Staff</option>
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-700">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserModal(false)}
+                    className="px-4 py-2 border border-gray-600 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading.action}
+                    className="px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading.action ? (
+                      <div className="flex items-center">
+                        <ArrowPathOutlineIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                        Adding...
+                      </div>
+                    ) : (
+                      'Add User'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Edit User Modal */}
+        {showEditUserModal && currentUser && (
+          <div className="fixed inset-0 bg-slate-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-md w-full p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-slate-900">Update Member Information</h3>
+                <button
+                  onClick={() => {
+                    setShowEditUserModal(false);
+                    setCurrentUser(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-500"
+                >
+                  <XMarkOutlineIcon className="h-6 w-6" />
+                </button>
+              </div>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleUpdateUser(currentUser.id, {
+                  name: currentUser.name,
+                  email: currentUser.email,
+                  role: currentUser.role
+                });
+              }}>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="edit-name" className="block text-sm font-medium text-slate-700">Name</label>
+                    <input
+                      type="text"
+                      id="edit-name"
+                      name="name"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={currentUser.name}
+                      onChange={(e) => setCurrentUser(prev => prev ? {...prev, name: e.target.value} : null)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-email" className="block text-sm font-medium text-slate-700">Email</label>
+                    <input
+                      type="email"
+                      id="edit-email"
+                      name="email"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={currentUser.email}
+                      onChange={(e) => setCurrentUser(prev => prev ? {...prev, email: e.target.value} : null)}
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditUserModal(false);
+                      setCurrentUser(null);
+                    }}
+                    className="px-4 py-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading.action}
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    {loading.action ? (
+                      <div className="flex items-center">
+                        <ArrowPathOutlineIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                        Updating...
+                      </div>
+                    ) : (
+                      'Update User'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Add Transaction Modal */}
+        {showAddTransactionModal && (
+          <div className="fixed inset-0 bg-slate-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-md w-full p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-slate-900">Record New Borrowing</h3>
+                <button
+                  onClick={() => setShowAddTransactionModal(false)}
+                  className="text-slate-400 hover:text-slate-500"
+                >
+                  <XMarkOutlineIcon className="h-6 w-6" />
+                </button>
+              </div>
+              <form onSubmit={handleAddTransaction}>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="book_id" className="block text-sm font-medium text-slate-700">Book</label>
+                    <select
+                      id="book_id"
+                      name="book_id"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={newTransaction.book_id}
+                      onChange={(e) => setNewTransaction(prev => ({...prev, book_id: e.target.value}))}
+                    >
+                      <option value="">Select a book</option>
+                      {books.map(book => (
+                        <option key={book.id} value={book.id}>
+                          {book.title} (Available: {book.available_copies})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="user_id" className="block text-sm font-medium text-slate-700">Member</label>
+                    <select
+                      id="user_id"
+                      name="user_id"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={newTransaction.user_id}
+                      onChange={(e) => setNewTransaction(prev => ({...prev, user_id: e.target.value}))}
+                    >
+                      <option value="">Select a member</option>
+                      {users.map(user => (
+                        <option key={user.id} value={user.id}>
+                          {user.name} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="due_date" className="block text-sm font-medium text-slate-700">Due Date</label>
+                    <input
+                      type="date"
+                      id="due_date"
+                      name="due_date"
+                      required
+                      className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      value={newTransaction.due_date}
+                      onChange={(e) => setNewTransaction(prev => ({...prev, due_date: e.target.value}))}
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTransactionModal(false)}
+                    className="px-4 py-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading.action}
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    {loading.action ? (
+                      <div className="flex items-center">
+                        <ArrowPathOutlineIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                        Adding...
+                      </div>
+                    ) : (
+                      'Add Transaction'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Profile Modal */}
+        {showProfileModal && (
+          <ProfileModal
+            isOpen={showProfileModal}
+            onClose={() => setShowProfileModal(false)}
+            user={user}
+          />
+        )}
+      </div>
     </div>
   );
 };

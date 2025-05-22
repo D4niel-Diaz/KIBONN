@@ -4,12 +4,15 @@ import React, { useEffect, useState } from 'react';
 import { useAppContext } from '@/context/AppProvider';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { BookOpenIcon, EnvelopeIcon, LockClosedIcon, UserIcon } from '@heroicons/react/24/outline';
+import Loader from '@/components/loader';
 
 interface FormData {
   name?: string;
   email: string;
   password: string;
   password_confirmation?: string;
+  role: string;
 }
 
 const AuthPage = () => {
@@ -18,34 +21,32 @@ const AuthPage = () => {
     name: "",
     email: "",
     password: "",
-    password_confirmation: ""
+    password_confirmation: "",
+    role: "user"
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasRedirected, setHasRedirected] = useState(false); // Prevent double redirect
+  const [hasRedirected, setHasRedirected] = useState(false);
   const router = useRouter();
   const { login, register, authToken, isLoading, user } = useAppContext();
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (!hasRedirected && authToken && !isLoading && user?.role) {
       if (user.role === 'admin') {
-        router.push('/dashboard'); // Admin
+        router.push('/dashboard');
       } else {
-        router.push('/user'); // Regular user
+        router.push('/user');
       }
       setHasRedirected(true);
     }
   }, [authToken, isLoading, user?.role, hasRedirected, router]);
 
-  // Handle input change
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
       [event.target.name]: event.target.value
     });
   };
 
-  // Submit login or register
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
@@ -67,7 +68,7 @@ const AuthPage = () => {
           formData.password_confirmation!
         );
         toast.success("Registered successfully! Please login.");
-        setIsLogin(true); // Switch to login form
+        setIsLogin(true);
       }
     } catch (error: any) {
       console.error("Authentication error:", error);
@@ -78,83 +79,118 @@ const AuthPage = () => {
   };
 
   if (isLoading || authToken) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
+    return <Loader />;
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-gray-800/50 backdrop-blur-sm p-8 rounded-2xl shadow-2xl border border-gray-700/50">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            {isLogin ? "Sign in to your account" : "Create your account"}
+          <div className="flex justify-center">
+            <div className="p-3 rounded-full bg-blue-500/10 border border-blue-500/20">
+              <BookOpenIcon className="h-8 w-8 text-blue-500" />
+            </div>
+          </div>
+          <h2 className="mt-6 text-center text-3xl font-bold text-white tracking-tight">
+            {isLogin ? "Login to Your Account" : "Create an Account"}
           </h2>
+          <p className="mt-2 text-center text-sm text-gray-400">
+            {isLogin ? "Welcome back! Please enter your details" : "Join us and start your journey"}
+          </p>
         </div>
         
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm space-y-4">
+          <div className="space-y-4">
             {!isLogin && (
               <div>
-                <label htmlFor="name" className="sr-only">Name</label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  required
-                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                  placeholder="Name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                />
+                <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <UserIcon className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="name"
+                    name="name"
+                    type="text"
+                    required
+                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-600 rounded-lg bg-gray-700/50 placeholder-gray-400 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+                    placeholder="John Doe"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                  />
+                </div>
               </div>
             )}
 
             <div>
-              <label htmlFor="email" className="sr-only">Email address</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
-                value={formData.email}
-                onChange={handleInputChange}
-              />
+              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">Email Address</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <EnvelopeIcon className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-600 rounded-lg bg-gray-700/50 placeholder-gray-400 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+                  placeholder="you@example.com"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                />
+              </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="sr-only">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                minLength={8}
-                className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
-                value={formData.password}
-                onChange={handleInputChange}
-              />
+              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <LockClosedIcon className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={8}
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-600 rounded-lg bg-gray-700/50 placeholder-gray-400 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                />
+              </div>
             </div>
 
             {!isLogin && (
               <div>
-                <label htmlFor="password_confirmation" className="sr-only">Confirm Password</label>
-                <input
-                  id="password_confirmation"
-                  name="password_confirmation"
-                  type="password"
-                  required
-                  minLength={8}
-                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                  placeholder="Confirm Password"
-                  value={formData.password_confirmation}
-                  onChange={handleInputChange}
-                />
+                <label htmlFor="password_confirmation" className="block text-sm font-medium text-gray-300 mb-1">Confirm Password</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <LockClosedIcon className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="password_confirmation"
+                    name="password_confirmation"
+                    type="password"
+                    required
+                    minLength={8}
+                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-600 rounded-lg bg-gray-700/50 placeholder-gray-400 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+                    placeholder="••••••••"
+                    value={formData.password_confirmation}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+            )}
+
+            {isLogin && (
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  className="text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                >
+                  Forgot Password?
+                </button>
               </div>
             )}
           </div>
@@ -163,26 +199,26 @@ const AuthPage = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-blue-500/20"
             >
               {isSubmitting ? (
                 <div className="w-5 h-5 border-t-2 border-b-2 border-white rounded-full animate-spin"></div>
               ) : (
-                isLogin ? "Sign in" : "Sign up"
+                isLogin ? "Sign in" : "Create Account"
               )}
             </button>
           </div>
         </form>
 
         <div className="text-center">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-400">
             {isLogin ? "Don't have an account?" : "Already have an account?"}
             <button
               onClick={() => setIsLogin(!isLogin)}
               disabled={isSubmitting}
-              className="ml-1 font-medium text-blue-600 hover:text-blue-500 focus:outline-none focus:underline transition-colors duration-200"
+              className="ml-1 font-medium text-blue-400 hover:text-blue-300 focus:outline-none focus:underline transition-colors duration-200"
             >
-              {isLogin ? "Sign up" : "Sign in"}
+              {isLogin ? "Register" : "Login"}
             </button>
           </p>
         </div>
