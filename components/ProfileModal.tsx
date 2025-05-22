@@ -14,7 +14,7 @@ interface ProfileModalProps {
     name: string;
     email: string;
     role: string;
-    profile_image?: string;
+    profile_image?: string | null;
   };
 }
 
